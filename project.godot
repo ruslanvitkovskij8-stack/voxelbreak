@@ -1,0 +1,13 @@
+[application]
+config/features = "Forward+"
+run/main_scene = "res://main.tscn"
+display/window/size/viewport_width = 1280
+display/window/size/viewport_height = 720
+display/window/title = "VoxelBreak"
+
+[input]
+ui_up = "W"
+ui_down = "S"
+ui_left = "A"
+ui_right = "D"
+ui_accept = "Space"
