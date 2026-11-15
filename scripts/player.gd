@@ -2,9 +2,11 @@ extends CharacterBody3D
 
 @export var speed: float = 5.0
 @export var jump_velocity: float = 4.5
+@export var gravity: float = 9.8
 @export var camera_sensitivity: float = 0.002
 
 @onready var camera = $Camera3D
+@onready var chunk_node = $../Chunk/ChunkScript
 
 var mouse_delta = Vector2.ZERO
 
@@ -20,20 +22,23 @@ func _input(event):
 
 func _physics_process(delta):
 	var direction = Vector3.ZERO
-	if Input.is_action_pressed("ui_up"):
+	if Input.is_key_pressed(KEY_W):
 		direction += -global_transform.basis.z
-	if Input.is_action_pressed("ui_down"):
+	if Input.is_key_pressed(KEY_S):
 		direction += global_transform.basis.z
-	if Input.is_action_pressed("ui_left"):
+	if Input.is_key_pressed(KEY_A):
 		direction += -global_transform.basis.x
-	if Input.is_action_pressed("ui_right"):
+	if Input.is_key_pressed(KEY_D):
 		direction += global_transform.basis.x
 	
 	direction = direction.normalized()
 	velocity.x = direction.x * speed
 	velocity.z = direction.z * speed
 	
-	if Input.is_action_just_pressed("ui_accept") and is_on_floor():
+	# Гравитация
+	velocity.y -= gravity * delta
+	
+	if Input.is_key_pressed(KEY_SPACE) and is_on_floor():
 		velocity.y = jump_velocity
 	
 	move_and_slide()
@@ -44,15 +49,16 @@ func _unhandled_input(event):
 
 func fire_ray():
 	# Луч из камеры через PhysicsDirectSpaceState3D.intersect_ray()
+	# camera смотрит в -basis.z, поэтому направление -basis.z
 	var space_state = get_world_3d().direct_space_state
 	var from = camera.global_transform.origin
-	var to = from + camera.global_transform.basis.z * 100.0
+	var to = from + (-camera.global_transform.basis.z) * 100.0
 	
 	var query = PhysicsRayQueryParameters3D.create(from, to)
 	var result = space_state.intersect_ray(query)
 	
 	if result:
 		print("Hit at: ", result.position)
-		# Здесь будет сигнал или вызов chunk.destroy_voxels
-		# signal hit_position(position: Vector3)
-		# emit_signal("hit_position", result.position)
+		# Вызываем destroy_voxels у чанка
+		chunk_node.destroy_voxels(result.position, 2)
+

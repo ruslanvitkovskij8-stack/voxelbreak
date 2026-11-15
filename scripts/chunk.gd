@@ -9,6 +9,9 @@ var voxels = PackedByteArray()
 @onready var collision_shape = $CollisionShape3D
 @onready var surface_tool = SurfaceTool.new()
 
+# Вершины для коллизии (собираем в процессе построения меша)
+var collision_vertices = PackedVector3Array()
+
 func _ready():
 	voxels.resize(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE)
 	# Заполняем тестовым кубом
@@ -34,6 +37,7 @@ func set_voxel(x: int, y: int, z: int, value: int) -> void:
 
 func update_mesh() -> void:
 	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	collision_vertices.clear()
 	
 	for x in range(CHUNK_SIZE):
 		for y in range(CHUNK_SIZE):
@@ -42,29 +46,87 @@ func update_mesh() -> void:
 					add_cube_faces(x, y, z)
 	
 	surface_tool.generate_normals()
-	surface_tool.commit(mesh_instance)
+	mesh_instance.mesh = surface_tool.commit()
 	
 	# Обновляем коллизию (ConcavePolygonShape3D)
-	var polygon = ConcavePolygonShape3D.new()
-	# В реальной реализации здесь собираются те же вершины в полигоны
-	# Для простоты на первом этапе используем массив вершин из surface_tool
-	polygon.faces = surface_tool.get_index_array() # Псевдокод, в Godot нужно конвертировать в полигоны
-	collision_shape.shape = polygon
+	var shape = ConcavePolygonShape3D.new()
+	# В Godot 4 ConcavePolygonShape3D использует массив граней (треугольников)
+	# Формат: PackedVector3Array, где каждые 3 вершины — треугольник
+	shape.set_faces(collision_vertices)
+	collision_shape.shape = shape
 
 func add_cube_faces(x: int, y: int, z: int) -> void:
 	# Добавляем грани, если сосед пустой
 	var size = 1.0
 	var offset = Vector3(x, y, z) * size
 	
-	# Пример: верхняя грань
+	# Помощник для добавления грани (2 треугольника, 6 вершин)
+	func add_face(normal: Vector3, v1: Vector3, v2: Vector3, v3: Vector3, v4: Vector3):
+		surface_tool.set_normal(normal)
+		# Треугольник 1
+		surface_tool.add_vertex(v1)
+		surface_tool.add_vertex(v2)
+		surface_tool.add_vertex(v3)
+		# Треугольник 2
+		surface_tool.add_vertex(v1)
+		surface_tool.add_vertex(v3)
+		surface_tool.add_vertex(v4)
+		
+		# Для коллизии (каждый треугольник — 3 вершины)
+		collision_vertices.append(v1)
+		collision_vertices.append(v2)
+		collision_vertices.append(v3)
+		collision_vertices.append(v1)
+		collision_vertices.append(v3)
+		collision_vertices.append(v4)
+
+	# Верх (Y+)
 	if get_voxel(x, y + 1, z) == 0:
-		surface_tool.set_normal(Vector3.UP)
-		surface_tool.add_vertex(offset + Vector3(0, size, 0))
-		surface_tool.add_vertex(offset + Vector3(size, size, 0))
-		surface_tool.add_vertex(offset + Vector3(size, size, size))
-		surface_tool.add_vertex(offset + Vector3(0, size, size))
-		# ... остальные вершины и треугольники для всех 6 граней ...
-		# (полная реализация граней будет добавлена в следующем этапе)
+		add_face(Vector3.UP,
+			offset + Vector3(0, size, 0),
+			offset + Vector3(size, size, 0),
+			offset + Vector3(size, size, size),
+			offset + Vector3(0, size, size))
+	
+	# Низ (Y-)
+	if get_voxel(x, y - 1, z) == 0:
+		add_face(Vector3.DOWN,
+			offset + Vector3(0, 0, 0),
+			offset + Vector3(size, 0, 0),
+			offset + Vector3(size, 0, size),
+			offset + Vector3(0, 0, size))
+	
+	# Перед (Z+)
+	if get_voxel(x, y, z + 1) == 0:
+		add_face(Vector3.FORWARD,
+			offset + Vector3(0, 0, size),
+			offset + Vector3(size, 0, size),
+			offset + Vector3(size, size, size),
+			offset + Vector3(0, size, size))
+	
+	# Зад (Z-)
+	if get_voxel(x, y, z - 1) == 0:
+		add_face(Vector3.BACK,
+			offset + Vector3(0, 0, 0),
+			offset + Vector3(size, 0, 0),
+			offset + Vector3(size, size, 0),
+			offset + Vector3(0, size, 0))
+	
+	# Право (X+)
+	if get_voxel(x + 1, y, z) == 0:
+		add_face(Vector3.RIGHT,
+			offset + Vector3(size, 0, 0),
+			offset + Vector3(size, size, 0),
+			offset + Vector3(size, size, size),
+			offset + Vector3(size, 0, size))
+	
+	# Лево (X-)
+	if get_voxel(x - 1, y, z) == 0:
+		add_face(Vector3.LEFT,
+			offset + Vector3(0, 0, 0),
+			offset + Vector3(0, size, 0),
+			offset + Vector3(0, size, size),
+			offset + Vector3(0, size, size))
 
 func destroy_voxels(center: Vector3, radius: int) -> void:
 	var changed = false
@@ -79,3 +141,4 @@ func destroy_voxels(center: Vector3, radius: int) -> void:
 					changed = true
 	if changed:
 		update_mesh()
+
